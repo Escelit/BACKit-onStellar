@@ -40,7 +40,7 @@ export default function ProfileTabs({
   const [followersPage, setFollowersPage] = useState(1)
   const [followingPage, setFollowingPage] = useState(1)
 
-  const tabs: { id: TabType | 'followers' | 'following'; label: string; count: number }[] = [
+  const tabs: { id: TabType; label: string; count: number }[] = [
     { id: 'created', label: 'Created Calls', count: createdCalls.length },
     { id: 'participated', label: 'Participated', count: participatedCalls.length },
     { id: 'resolved', label: 'Resolved', count: resolvedCalls.length },
