@@ -116,6 +116,7 @@ impl CallRegistry {
             condition,
             settled: false,
             created_at: current_timestamp,
+            cancelled: false,
         };
 
         set_call(&env, &call);
@@ -432,5 +433,44 @@ impl CallRegistry {
 
         call.settled = true;
         set_call(&env, &call);
+    }
+
+    /// Cancel a call and refund the creator's escrowed stake.
+    /// Only callable by the creator, and only before any third-party stakes.
+    pub fn cancel_call(env: Env, creator: Address, call_id: u64) {
+        creator.require_auth();
+
+        let mut call = match storage::get_call(&env, call_id) {
+            Some(c) => c,
+            None => panic!("Call does not exist"),
+        };
+
+        if call.creator != creator {
+            panic!("Only the creator can cancel this call");
+        }
+
+        if call.cancelled {
+            panic!("Call is already cancelled");
+        }
+
+        if call.settled || call.outcome != 0 {
+            panic!("Cannot cancel a resolved or settled call");
+        }
+
+        if call.total_up_stake > 0 || call.total_down_stake > 0 {
+            panic!("Cannot cancel a call with existing stakes");
+        }
+
+        call.cancelled = true;
+        storage::set_call(&env, &call);
+
+        let token_client = token::Client::new(&env, &call.stake_token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &creator,
+            &call.stake_amount,
+        );
+
+        events::emit_call_cancelled(&env, call_id, &creator, call.stake_amount);
     }
 }
