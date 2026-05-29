@@ -94,6 +94,15 @@ pub struct ContractConfig {
     pub fee_bps: u32,
 }
 
+/// Contract-wide aggregated statistics for dashboards.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlobalStats {
+    pub total_calls: u64,
+    pub total_stake_volume: i128,
+    pub total_unique_stakers: u64,
+}
+
 /// Statistics for a call
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]

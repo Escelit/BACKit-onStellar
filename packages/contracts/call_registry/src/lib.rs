@@ -130,6 +130,7 @@ impl CallRegistry {
         };
 
         set_call(&env, &call);
+        record_call_created(&env);
         extend_storage_ttl(&env);
 
         emit_call_created(
@@ -216,6 +217,7 @@ impl CallRegistry {
 
         set_call(&env, &call);
         add_staker_call(&env, &staker, call_id);
+        record_stake(&env, &staker, amount);
         extend_storage_ttl(&env);
 
         emit_stake_added(&env, call_id, &staker, amount, position);
@@ -479,5 +481,10 @@ impl CallRegistry {
     /// Get total number of calls created.
     pub fn get_call_count(env: Env) -> u64 {
         get_call_counter(&env)
+    }
+
+    /// Get contract-wide aggregated statistics.
+    pub fn get_global_stats(env: Env) -> GlobalStats {
+        storage::get_global_stats(&env)
     }
 }
