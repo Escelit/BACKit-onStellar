@@ -1,5 +1,7 @@
 use soroban_sdk::{Address, Env};
 
+use backit_shared::is_valid_fee_bps;
+
 use crate::errors::CallRegistryError;
 use crate::events::{
     emit_admin_params_changed_address, emit_admin_params_changed_u32, PARAM_ADMIN, PARAM_FEE_BPS,
@@ -64,7 +66,7 @@ pub fn set_outcome_manager(env: Env, new_manager: Address) -> Result<(), CallReg
 /// * [`CallRegistryError::NotInitialized`] – contract not initialised.
 /// * [`CallRegistryError::FeeTooHigh`]     – `new_fee_bps` > 10 000.
 pub fn set_fee(env: Env, new_fee_bps: u32) -> Result<(), CallRegistryError> {
-    if new_fee_bps > 10_000 {
+    if !is_valid_fee_bps(new_fee_bps) {
         return Err(CallRegistryError::FeeTooHigh);
     }
 
