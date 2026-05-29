@@ -9,6 +9,7 @@ mod verification;
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, IntoVal, Map, Symbol, Vec};
 
 use auth::require_admin;
+use backit_shared::{is_valid_fee_bps, is_valid_outcome};
 use events::{
     emit_batch_payout_started, emit_fee_collected, emit_outcome_finalized, emit_outcome_submitted,
     emit_payout_claimed,
@@ -84,7 +85,7 @@ impl OutcomeManager {
         if quorum == 0 || quorum > oracles.len() as u32 {
             panic!("invalid quorum");
         }
-        if fee_bps > 10000 {
+        if !is_valid_fee_bps(fee_bps) {
             panic!("invalid fee_bps");
         }
 
@@ -181,7 +182,7 @@ impl OutcomeManager {
         }
 
         // 4. Validate outcome range
-        if signed.outcome != 1 && signed.outcome != 2 {
+        if !is_valid_outcome(signed.outcome) {
             panic!("invalid outcome: must be 1 (UP) or 2 (DOWN)");
         }
 

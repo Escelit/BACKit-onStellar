@@ -11,6 +11,7 @@ mod types;
 #[cfg(test)]
 mod test;
 
+use backit_shared::{is_valid_outcome, OUTCOME_DOWN, OUTCOME_UP};
 use errors::CallRegistryError;
 use events::*;
 use storage::*;
@@ -265,7 +266,7 @@ impl CallRegistry {
 
         let mut call = get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
 
-        if outcome != 1 && outcome != 2 {
+        if !is_valid_outcome(outcome) {
             return Err(CallRegistryError::InvalidOutcome);
         }
 
@@ -495,8 +496,8 @@ impl CallRegistry {
         let call = get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
 
         match position {
-            1 => Ok(call.up_stakes.get(staker).unwrap_or(0)),
-            2 => Ok(call.down_stakes.get(staker).unwrap_or(0)),
+            OUTCOME_UP => Ok(call.up_stakes.get(staker).unwrap_or(0)),
+            OUTCOME_DOWN => Ok(call.down_stakes.get(staker).unwrap_or(0)),
             _ => Err(CallRegistryError::InvalidPosition),
         }
     }
