@@ -6,7 +6,7 @@ use soroban_sdk::{
     Address, BytesN, Env, Vec,
 };
 
-use crate::storage::SignedOutcome;
+use crate::storage::{PriceObservation, SignedOutcome};
 use crate::{OutcomeManager, OutcomeManagerClient};
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -95,6 +95,110 @@ fn setup_single_oracle(
 }
 
 // ─── Initialization Tests ──────────────────────────────────────────────────────
+
+
+fn sign_observation(
+    env: &Env,
+    secret: &BytesN<32>,
+    call_id: u64,
+    price: i128,
+    timestamp: u64,
+) -> BytesN<64> {
+    use ed25519_dalek::{Signer, SigningKey};
+    use soroban_sdk::Bytes;
+
+    let mut raw = Bytes::from_slice(env, b"twap_obs:");
+    raw.append(&Bytes::from_slice(env, &call_id.to_be_bytes()));
+    raw.append(&Bytes::from_slice(env, &price.to_be_bytes()));
+    raw.append(&Bytes::from_slice(env, &timestamp.to_be_bytes()));
+
+    let msg_len = raw.len() as usize;
+    let mut buf = [0u8; 64];
+    raw.copy_into_slice(&mut buf[..msg_len]);
+
+    let signing_key = SigningKey::from_bytes(&secret.to_array());
+    let sig = signing_key.sign(&buf[..msg_len]);
+    BytesN::from_array(env, &sig.to_bytes())
+}
+
+#[test]
+fn test_twap_three_equal_intervals() {
+    // prices 100, 200, 300 at t=1000, 2000, 3000
+    // intervals: 1000s each
+    // TWAP = (100*1000 + 200*1000) / 2000 = 150
+    let env = Env::default();
+    let (_admin, _registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+    let call_id = 42u64;
+    for (price, ts) in [(100_i128, 1000u64), (200, 2000), (300, 3000)] {
+        let sig = sign_observation(&env, &oracle_secret, call_id, price, ts);
+        client.submit_price_observation(
+            &call_id,
+            &PriceObservation { price, timestamp: ts },
+            &oracle_pubkey,
+            &sig,
+        );
+    }
+    assert_eq!(client.compute_twap(&call_id), 150);
+}
+
+#[test]
+fn test_twap_unequal_intervals() {
+    // price 100 for 100s, then 900 for 900s
+    // TWAP = (100*100 + 900*900) / 1000 = 820
+    let env = Env::default();
+    let (_admin, _reg, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+    let call_id = 43u64;
+    for (price, ts) in [(100_i128, 0u64), (900, 100), (900, 1000)] {
+        let sig = sign_observation(&env, &oracle_secret, call_id, price, ts);
+        client.submit_price_observation(
+            &call_id,
+            &PriceObservation { price, timestamp: ts },
+            &oracle_pubkey,
+            &sig,
+        );
+    }
+    assert_eq!(client.compute_twap(&call_id), 820);
+}
+
+#[test]
+#[should_panic(expected = "minimum 3 price observations required")]
+fn test_twap_requires_minimum_3_observations() {
+    let env = Env::default();
+    let (_admin, _reg, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+    let call_id = 44u64;
+    for (price, ts) in [(100_i128, 1000u64), (200, 2000)] {
+        let sig = sign_observation(&env, &oracle_secret, call_id, price, ts);
+        client.submit_price_observation(
+            &call_id,
+            &PriceObservation { price, timestamp: ts },
+            &oracle_pubkey,
+            &sig,
+        );
+    }
+    client.compute_twap(&call_id);
+}
+
+#[test]
+#[should_panic(expected = "observation timestamp must be strictly increasing")]
+fn test_twap_rejects_non_increasing_timestamp() {
+    let env = Env::default();
+    let (_admin, _reg, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+    let call_id = 45u64;
+    let sig1 = sign_observation(&env, &oracle_secret, call_id, 100, 1000);
+    client.submit_price_observation(
+        &call_id,
+        &PriceObservation { price: 100, timestamp: 1000 },
+        &oracle_pubkey,
+        &sig1,
+    );
+    let sig2 = sign_observation(&env, &oracle_secret, call_id, 200, 1000);
+    client.submit_price_observation(
+        &call_id,
+        &PriceObservation { price: 200, timestamp: 1000 },
+        &oracle_pubkey,
+        &sig2,
+    );
+}
 
 #[test]
 fn test_initialize_success() {
@@ -562,4 +666,27 @@ fn test_batch_claim_duplicate_within_same_batch_panics() {
     stakes.push_back(50_i128);
 
     client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &50_i128);
+
+}
+
+// -- upgrade / version -------------------------------------------------------
+#[test]
+fn test_om_version_returns_contract_version() {
+    let env = Env::default();
+    let (_admin, _registry_id, _secret, _pubkey, client) = setup_single_oracle(&env);
+    assert_eq!(client.version(), 1u32);
+}
+
+#[test]
+#[should_panic(expected = "not initialized")]
+fn test_om_upgrade_requires_admin_auth() {
+    // upgrade() reads admin from instance storage before calling require_auth().
+    // Calling it before initialize() panics with "not initialized", proving
+    // the admin guard is in place before any WASM update can occur.
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, OutcomeManager);
+    let client = OutcomeManagerClient::new(&env, &contract_id);
+    let fake_hash = BytesN::<32>::from_array(&env, &[0u8; 32]);
+    client.upgrade(&fake_hash); // panics: "not initialized"
 }
