@@ -28,13 +28,29 @@ export class CallsService {
     return { data, total, page, limit };
   }
 
-  async search(query: QueryCallsDto) {
-    const { search = '', page = 1, limit = 20 } = query;
-    const [data, total] = await this.callsRepository.searchVisible(search, page, limit);
+  async getFollowingFeed(address: string, query: QueryCallsDto) {
+    const { page = 1, limit = 20 } = query;
+    const [data, total] = await this.callsRepository.findFeedByFollowing(
+      address,
+      page,
+      limit,
+    );
     return { data, total, page, limit };
   }
 
-  async prepareCall(dto: PrepareCallDto): Promise<{ cid: string; ipfsUrl: string }> {
+  async search(query: QueryCallsDto) {
+    const { search = '', page = 1, limit = 20 } = query;
+    const [data, total] = await this.callsRepository.searchVisible(
+      search,
+      page,
+      limit,
+    );
+    return { data, total, page, limit };
+  }
+
+  async prepareCall(
+    dto: PrepareCallDto,
+  ): Promise<{ cid: string; ipfsUrl: string }> {
     const content = {
       version: 1,
       title: dto.title,
@@ -53,19 +69,29 @@ export class CallsService {
         cid = await this.ipfsService.pinCallContent({
           title: content.title,
           thesis: content.thesis,
-          conditionJson: { condition: content.condition, tokenPair: content.tokenPair },
+          conditionJson: {
+            condition: content.condition,
+            tokenPair: content.tokenPair,
+          },
           createdAt: content.createdAt,
         });
         break;
       } catch {
         attempts++;
-        if (attempts >= maxAttempts) throw new Error('IPFS pinning failed after retries');
+        if (attempts >= maxAttempts)
+          throw new Error('IPFS pinning failed after retries');
         await new Promise((r) => setTimeout(r, 1000 * attempts));
       }
     }
 
     const ipfsUrl = this.ipfsService.getGatewayUrl(cid!);
     return { cid: cid!, ipfsUrl };
+  }
+
+  async getCallOrThrow(id: string) {
+    const call = await this.callsRepository.findOne({ where: { id } });
+    if (!call) throw new NotFoundException('Call not found');
+    return call;
   }
 
   async reportCall(id: string, reporterAddress: string, dto: ReportCallDto) {
@@ -75,10 +101,15 @@ export class CallsService {
     const alreadyReported = await this.callReportRepository.findOne({
       where: { callId: id, reporterAddress },
     });
-    if (alreadyReported) throw new ConflictException('You have already reported this call');
+    if (alreadyReported)
+      throw new ConflictException('You have already reported this call');
 
     await this.callReportRepository.save(
-      this.callReportRepository.create({ callId: id, reporterAddress, reason: dto.reason }),
+      this.callReportRepository.create({
+        callId: id,
+        reporterAddress,
+        reason: dto.reason,
+      }),
     );
 
     call.reportCount += 1;
