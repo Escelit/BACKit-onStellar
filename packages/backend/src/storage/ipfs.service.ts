@@ -63,4 +63,10 @@ export class IpfsService {
     const gateway = process.env.IPFS_GATEWAY || 'https://ipfs.io/ipfs';
     return `${gateway}/${cid}`;
   }
+
+  async pinAvatar(file: Express.Multer.File): Promise<string> {
+    // In a real implementation, this would upload the file to IPFS
+    // For now, we return a mock CID
+    return `mock_avatar_cid_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  }
 }
