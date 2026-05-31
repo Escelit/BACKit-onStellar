@@ -114,6 +114,38 @@ jobs:
         if: steps.backend_changes.outputs.backend_relevant == 'true'
         run: pnpm --filter backend build
 
+      - name: Run Backend Startup Smoke Test
+        if: steps.backend_changes.outputs.backend_relevant == 'true'
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/backit_test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+          PORT: 3000
+        run: |
+          set -euo pipefail
+          pnpm --filter backend exec node dist/main.js &
+          backend_pid=$!
+          trap "kill $backend_pid" EXIT
+          for i in $(seq 1 12); do
+            if curl --silent --fail http://localhost:3000/health; then
+              echo "Backend is up"
+              break
+            fi
+            sleep 2
+          done
+          if ! curl --silent --fail http://localhost:3000/health; then
+            echo "Backend startup smoke test failed"
+            exit 1
+          fi
+
+      - name: Run Backend E2E Tests
+        if: steps.backend_changes.outputs.backend_relevant == 'true'
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/backit_test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+        run: pnpm --filter backend test:e2e
+
       - name: Run Backend Tests with Coverage
         if: steps.backend_changes.outputs.backend_relevant == 'true'
         env:
