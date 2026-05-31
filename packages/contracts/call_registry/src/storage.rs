@@ -21,6 +21,7 @@ pub enum DataKey {
     UserStake(u64, Address, u32),
     UpStakerCount(u64),
     DownStakerCount(u64),
+    VoidRefundClaimed(u64, Address),
 }
 
 /// Store contract configuration
@@ -244,4 +245,18 @@ pub fn set_creator_stats(env: &Env, creator: &Address, stats: &CreatorStats) {
         PERSISTENT_LIFETIME_THRESHOLD,
         PERSISTENT_BUMP_AMOUNT,
     );
+}
+
+/// Mark that a staker has claimed their void refund for a call
+pub fn set_void_refund_claimed(env: &Env, call_id: u64, staker: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::VoidRefundClaimed(call_id, staker.clone()), &true);
+}
+
+/// Check whether a staker has already claimed their void refund
+pub fn is_void_refund_claimed(env: &Env, call_id: u64, staker: &Address) -> bool {
+    env.storage()
+        .instance()
+        .has(&DataKey::VoidRefundClaimed(call_id, staker.clone()))
 }
