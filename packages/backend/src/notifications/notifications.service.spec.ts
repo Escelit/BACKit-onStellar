@@ -148,8 +148,8 @@ describe('NotificationsService', () => {
     beforeEach(() => {
       repo.create.mockReturnValue(mockNotification);
       repo.save.mockResolvedValue(mockNotification);
-      const prefService = module.get(NotificationPreferencesService) as jest.Mocked<NotificationPreferencesService>;
-      prefService.checkPreference.mockImplementation(
+      const prefService = module.get(NotificationPreferencesService);
+      (prefService.checkPreference as jest.Mock).mockImplementation(
         async (address, type, channel) => {
           return channel === NotificationChannel.IN_APP;
         },
@@ -178,10 +178,10 @@ describe('NotificationsService', () => {
   });
 
   describe('notify preference filtering', () => {
-    let preferenceService: jest.Mocked<NotificationPreferencesService>;
+    let preferenceService: NotificationPreferencesService;
 
     beforeEach(() => {
-      preferenceService = module.get(NotificationPreferencesService) as jest.Mocked<NotificationPreferencesService>;
+      preferenceService = module.get(NotificationPreferencesService);
       repo.create.mockImplementation((dto: any) => ({
         ...mockNotification,
         ...dto,
@@ -190,7 +190,7 @@ describe('NotificationsService', () => {
     });
 
     it('should NOT create in-app notification if IN_APP channel is disabled', async () => {
-      preferenceService.checkPreference.mockImplementation(
+      (preferenceService.checkPreference as jest.Mock).mockImplementation(
         async (address, type, channel) => {
           return channel !== NotificationChannel.IN_APP;
         },
@@ -209,7 +209,7 @@ describe('NotificationsService', () => {
     });
 
     it('should create email notification if EMAIL channel is enabled', async () => {
-      preferenceService.checkPreference.mockImplementation(
+      (preferenceService.checkPreference as jest.Mock).mockImplementation(
         async (address, type, channel) => {
           return channel === NotificationChannel.EMAIL;
         },
