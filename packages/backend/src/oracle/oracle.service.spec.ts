@@ -24,6 +24,7 @@ import { OracleCall, OracleCallStatus } from './entities/oracle-call.entity';
 import { OracleOutcome } from './entities/oracle-outcome.entity';
 import { OracleHealthService } from './oracle-health.service';
 import { SigningService } from './signing.service';
+import { IpfsService } from '../storage/ipfs.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 describe('OracleService', () => {
@@ -63,6 +64,7 @@ describe('OracleService', () => {
         },
         { provide: OracleHealthService, useValue: oracleHealth },
         { provide: SigningService, useValue: signingService },
+        { provide: IpfsService, useValue: { pinEvidencePayload: jest.fn().mockResolvedValue('cid123') } },
       ],
     }).compile();
 

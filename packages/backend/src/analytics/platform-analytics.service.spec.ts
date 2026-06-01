@@ -3,16 +3,25 @@ import { DataSource } from 'typeorm';
 
 const mockCallRepo = { createQueryBuilder: jest.fn() } as any;
 const mockStakeRepo = { createQueryBuilder: jest.fn() } as any;
-const mockDataSource = {
-  query: jest.fn(),
-} as unknown as DataSource;
+const mockDataSource = { query: jest.fn() } as unknown as DataSource;
+const mockCacheManager = { get: jest.fn().mockResolvedValue(null), set: jest.fn() } as any;
+const mockTokensService = {} as any;
+const mockCoinGeckoService = {} as any;
 
 describe('AnalyticsService – platform analytics', () => {
   let service: AnalyticsService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new AnalyticsService(mockCallRepo, mockStakeRepo, mockDataSource);
+    service = new AnalyticsService(
+      mockCallRepo,
+      mockStakeRepo,
+      mockStakeRepo,       // stakeLedgerRepository
+      mockDataSource,
+      mockCacheManager,
+      mockTokensService,
+      mockCoinGeckoService,
+    );
   });
 
   describe('getPlatformAnalytics', () => {
