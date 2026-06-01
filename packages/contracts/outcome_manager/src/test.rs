@@ -6,8 +6,8 @@ use soroban_sdk::{
     Address, BytesN, Env, Vec,
 };
 
-use crate::storage::{PriceObservation, SignedOutcome};
-use crate::{OutcomeManager, OutcomeManagerClient};
+use crate::storage::{OracleVote, PriceObservation, SignedOutcome};
+use crate::{OutcomeManager, OutcomeManagerClient, MAX_ORACLES};
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -307,6 +307,28 @@ fn test_quorum_reached_with_two_oracles() {
 
     let final_outcome = client.get_outcome(&call_id);
     assert_eq!(final_outcome.outcome, outcome_val);
+
+    let stored_votes = client.get_votes(&call_id);
+    assert_eq!(stored_votes.len(), 2);
+    assert_eq!(client.get_vote_count(&call_id), 2);
+    assert_eq!(
+        stored_votes.get(0).unwrap(),
+        OracleVote {
+            oracle: p1,
+            outcome: outcome_val,
+            price,
+            timestamp: ts,
+        }
+    );
+    assert_eq!(
+        stored_votes.get(1).unwrap(),
+        OracleVote {
+            oracle: p2,
+            outcome: outcome_val,
+            price,
+            timestamp: ts,
+        }
+    );
 }
 
 #[test]
@@ -347,6 +369,50 @@ fn test_add_remove_oracle() {
 
     client.remove_oracle(&new_pubkey);
     assert!(!client.is_oracle(&new_pubkey));
+}
+
+#[test]
+fn test_get_oracles_tracks_add_remove() {
+    let env = Env::default();
+    let (_, _, _, original_pubkey, client) = setup_single_oracle(&env);
+    let (_, second_pubkey) = gen_keypair(&env);
+
+    let initial = client.get_oracles();
+    assert_eq!(initial.len(), 1);
+    assert_eq!(initial.get(0).unwrap(), original_pubkey.clone());
+    assert_eq!(client.get_oracle_count(), 1);
+
+    client.add_oracle(&second_pubkey);
+    let with_second = client.get_oracles();
+    assert_eq!(with_second.len(), 2);
+    assert_eq!(with_second.get(0).unwrap(), original_pubkey);
+    assert_eq!(with_second.get(1).unwrap(), second_pubkey.clone());
+    assert_eq!(client.get_oracle_count(), 2);
+
+    client.remove_oracle(&second_pubkey);
+    assert_eq!(client.get_oracles().len(), 1);
+    assert_eq!(client.get_oracle_count(), 1);
+}
+
+#[test]
+#[should_panic(expected = "max oracles reached")]
+fn test_add_oracle_enforces_max_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    let contract_id = env.register_contract(None, OutcomeManager);
+    let client = OutcomeManagerClient::new(&env, &contract_id);
+
+    let mut oracles = Vec::new(&env);
+    for _ in 0..MAX_ORACLES {
+        let (_, pubkey) = gen_keypair(&env);
+        oracles.push_back(pubkey);
+    }
+
+    client.initialize(&admin, &oracles, &1u32, &fee_collector, &0u32, &0u64);
+    let (_, extra_pubkey) = gen_keypair(&env);
+    client.add_oracle(&extra_pubkey);
 }
 
 #[test]

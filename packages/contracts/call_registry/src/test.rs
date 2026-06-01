@@ -30,10 +30,12 @@ mod call_registry {
     use crate::storage::DataKey;
     use crate::types::ConditionType;
     use crate::{CallRegistry, CallRegistryClient};
+    use ed25519_dalek::{Signer, SigningKey};
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     const TEST_MIN_STAKE: i128 = 1_000_000;
+    const TEST_START_PRICE: i128 = 100_000_000;
 
     /// Spin up a fresh environment with a registered, initialised CallRegistry.
     fn setup() -> (Env, CallRegistryClient<'static>, Address, Address) {
@@ -60,6 +62,35 @@ mod call_registry {
         (env, admin, outcome_manager, creator)
     }
 
+    fn gen_keypair(env: &Env) -> (BytesN<32>, BytesN<32>) {
+        use rand::RngCore;
+
+        let mut seed = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut seed);
+
+        let signing_key = SigningKey::from_bytes(&seed);
+        let public_key = signing_key.verifying_key();
+
+        (
+            BytesN::from_array(env, &seed),
+            BytesN::from_array(env, &public_key.to_bytes()),
+        )
+    }
+
+    fn sign_start_price(env: &Env, secret: &BytesN<32>, call_id: u64, price: i128) -> BytesN<64> {
+        let mut raw = Bytes::from_slice(env, b"start_price:");
+        raw.append(&Bytes::from_slice(env, &call_id.to_be_bytes()));
+        raw.append(&Bytes::from_slice(env, &price.to_be_bytes()));
+
+        let msg_len = raw.len() as usize;
+        let mut buf = [0u8; 64];
+        raw.copy_into_slice(&mut buf[..msg_len]);
+
+        let signing_key = SigningKey::from_bytes(&secret.to_array());
+        let sig = signing_key.sign(&buf[..msg_len]);
+        BytesN::from_array(env, &sig.to_bytes())
+    }
+
     /// Convenience wrapper: creates a call with a `TargetAbove` condition so
     /// every test that doesn't care about conditions doesn't have to repeat it.
     fn create_call_with_default_condition(
@@ -77,6 +108,7 @@ mod call_registry {
             creator,
             stake_token,
             stake_amount,
+            &TEST_START_PRICE,
             end_ts,
             token_address,
             pair_id,
@@ -377,6 +409,45 @@ mod call_registry {
         assert_eq!(staker_calls.get(0).unwrap().id, call.id);
     }
 
+    #[test]
+    fn test_call_stakers_tracked_without_duplicates() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let staker1 = Address::generate(&env);
+        let staker2 = Address::generate(&env);
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+
+        let call = create_call_with_default_condition(
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+
+        client.stake_on_call(&staker1, &call.id, &50_000_000_i128, &1);
+        client.stake_on_call(&staker1, &call.id, &20_000_000_i128, &2);
+        client.stake_on_call(&staker2, &call.id, &30_000_000_i128, &1);
+
+        let stakers = client.get_call_stakers(&call.id);
+        assert_eq!(stakers.len(), 2);
+        assert_eq!(stakers.get(0).unwrap(), staker1);
+        assert_eq!(stakers.get(1).unwrap(), staker2);
+        assert_eq!(client.get_call_staker_count(&call.id), 2);
+    }
+
     // ── global stats ──────────────────────────────────────────────────────────
 
     #[test]
@@ -466,9 +537,74 @@ mod call_registry {
         assert_eq!(call.total_up_stake, 0);
         assert_eq!(call.total_down_stake, 0);
         assert_eq!(call.outcome, 0);
+        assert_eq!(call.start_price, TEST_START_PRICE);
         assert!(!call.settled);
         assert_eq!(call.condition, ConditionType::TargetAbove(100_000_000_i128));
         assert_eq!(call.created_at, 1000);
+    }
+
+    #[test]
+    fn test_create_call_zero_start_price_returns_error() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+
+        let result = client.try_create_call(
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &0_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+            &ConditionType::TargetAbove(100_000_000_i128),
+        );
+
+        assert_eq!(result, Err(Ok(CallRegistryError::InvalidStakeAmount)));
+    }
+
+    #[test]
+    fn test_set_start_price_updates_call() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let call = create_call_with_default_condition(
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+
+        let (secret, pubkey) = gen_keypair(&env);
+        let new_price = 125_000_000_i128;
+        let signature = sign_start_price(&env, &secret, call.id, new_price);
+
+        let updated = client.set_start_price(&call.id, &new_price, &pubkey, &signature);
+        assert_eq!(updated.start_price, new_price);
+        assert_eq!(client.get_call(&call.id).start_price, new_price);
     }
 
     #[test]
@@ -490,6 +626,7 @@ mod call_registry {
             &creator,
             &stake_token,
             &-100_000_000_i128,
+            &TEST_START_PRICE,
             &2000u64,
             &token_address,
             &pair_id,
@@ -523,6 +660,7 @@ mod call_registry {
             &creator,
             &stake_token,
             &100_000_000_i128,
+            &TEST_START_PRICE,
             &500u64, // in the past
             &token_address,
             &pair_id,
@@ -1255,6 +1393,7 @@ mod call_registry {
             creator,
             &stake_token,
             &100_000_000_i128,
+            &TEST_START_PRICE,
             &5000u64,
             &token_address,
             &pair_id,
@@ -1344,6 +1483,7 @@ mod call_registry {
             &creator,
             &stake_token,
             &100_000_000_i128,
+            &TEST_START_PRICE,
             &2000u64,
             &token_address,
             &pair_id,
@@ -1490,6 +1630,7 @@ mod call_registry {
             &creator,
             &stake_token,
             &100_000_000_i128,
+            &TEST_START_PRICE,
             &2000u64,
             &token_address,
             &pair_id,
@@ -2071,4 +2212,3 @@ mod call_registry {
         assert!(!has_warning);
     }
 }
-

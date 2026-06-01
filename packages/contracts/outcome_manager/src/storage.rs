@@ -29,10 +29,20 @@ pub struct SignedOutcome {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleVote {
+    pub oracle: BytesN<32>,
+    pub outcome: u32,
+    pub price: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub enum InstanceKey {
     Admin,
     Oracles,
+    OracleList,
     Quorum,
     FinalOutcome(u64),
     Claimed(u64, Address),
@@ -46,6 +56,12 @@ pub enum InstanceKey {
     Paused,                  // Emergency pause flag for rogue oracle detection
     Version,
     MaxSubmissionDelay,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum PersistentKey {
+    Votes(u64),
 }
 
 

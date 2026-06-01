@@ -22,6 +22,7 @@ use storage::{
 use verification::{build_message, verify_signature};
 
 pub const CONTRACT_VERSION: u32 = 1;
+pub const MAX_ORACLES: u32 = 20;
 
 // ─── Cross-contract helpers ────────────────────────────────────────────────────
 
@@ -101,6 +102,9 @@ impl OutcomeManager {
         if quorum == 0 || quorum > oracles.len() as u32 {
             panic!("invalid quorum");
         }
+        if oracles.len() as u32 > MAX_ORACLES {
+            panic!("too many oracles");
+        }
         if !is_valid_fee_bps(fee_bps) {
             panic!("invalid fee_bps");
         }
@@ -114,6 +118,9 @@ impl OutcomeManager {
         env.storage()
             .instance()
             .set(&InstanceKey::Oracles, &oracle_map);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::OracleList, &oracles);
         env.storage().instance().set(&InstanceKey::Quorum, &quorum);
         env.storage()
             .instance()
@@ -130,20 +137,51 @@ impl OutcomeManager {
         require_admin(&env);
         let mut oracles: Map<BytesN<32>, bool> =
             env.storage().instance().get(&InstanceKey::Oracles).unwrap();
-        oracles.set(oracle, true);
+        let mut oracle_list: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&InstanceKey::OracleList)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        if oracles.contains_key(oracle.clone()) {
+            return;
+        }
+        if oracle_list.len() as u32 >= MAX_ORACLES {
+            panic!("max oracles reached");
+        }
+        oracles.set(oracle.clone(), true);
+        oracle_list.push_back(oracle);
         env.storage()
             .instance()
             .set(&InstanceKey::Oracles, &oracles);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::OracleList, &oracle_list);
     }
 
     pub fn remove_oracle(env: Env, oracle: BytesN<32>) {
         require_admin(&env);
         let mut oracles: Map<BytesN<32>, bool> =
             env.storage().instance().get(&InstanceKey::Oracles).unwrap();
-        oracles.remove(oracle);
+        let oracle_list: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&InstanceKey::OracleList)
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut filtered = Vec::new(&env);
+
+        oracles.remove(oracle.clone());
+        for existing in oracle_list.iter() {
+            if existing != oracle {
+                filtered.push_back(existing);
+            }
+        }
         env.storage()
             .instance()
             .set(&InstanceKey::Oracles, &oracles);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::OracleList, &filtered);
     }
 
     pub fn set_quorum(env: Env, quorum: u32) {
@@ -262,6 +300,20 @@ impl OutcomeManager {
         env.storage()
             .temporary()
             .set(&submission_key, &outcome_hash);
+
+        let vote_key = PersistentKey::Votes(signed.call_id);
+        let mut votes_for_call: Vec<OracleVote> = env
+            .storage()
+            .persistent()
+            .get(&vote_key)
+            .unwrap_or_else(|| Vec::new(&env));
+        votes_for_call.push_back(OracleVote {
+            oracle: signed.oracle_pubkey.clone(),
+            outcome: signed.outcome,
+            price: signed.price,
+            timestamp: signed.timestamp,
+        });
+        env.storage().persistent().set(&vote_key, &votes_for_call);
 
         // 8. Tally votes for this outcome candidate
         let vote_key = TempKey::VoteCount(outcome_hash.clone(), signed.call_id);
@@ -664,6 +716,32 @@ impl OutcomeManager {
             .get(&InstanceKey::Oracles)
             .expect("not initialized");
         oracles.contains_key(oracle)
+    }
+
+    /// Return the trusted oracle public keys.
+    pub fn get_oracles(env: Env) -> Vec<BytesN<32>> {
+        env.storage()
+            .instance()
+            .get(&InstanceKey::OracleList)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Return the total number of trusted oracles.
+    pub fn get_oracle_count(env: Env) -> u32 {
+        Self::get_oracles(env).len() as u32
+    }
+
+    /// Return all oracle votes stored for a call.
+    pub fn get_votes(env: Env, call_id: u64) -> Vec<OracleVote> {
+        env.storage()
+            .persistent()
+            .get(&PersistentKey::Votes(call_id))
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Return the number of stored oracle votes for a call.
+    pub fn get_vote_count(env: Env, call_id: u64) -> u32 {
+        Self::get_votes(env, call_id).len() as u32
     }
 
     /// Return the current contract version.
