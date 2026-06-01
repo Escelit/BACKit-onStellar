@@ -6,6 +6,21 @@ export interface User {
   followers: number
   following: number
   isFollowing?: boolean
+  bio?: string
+  avatarUrl?: string | null
+  badges?: UserBadge[]
+}
+
+export type BadgeType =
+  | 'Early Adopter'
+  | 'Top Predictor'
+  | 'Whale'
+  | 'Hot Streak'
+  | 'Community Leader'
+
+export interface UserBadge {
+  type: BadgeType
+  earnedAt?: string
 }
 
 export interface Call {
@@ -64,6 +79,36 @@ export interface CallDetailData {
   participants: Participant[];
   condition: string;
   conditionJson?: any;
+  startPrice?: number;
+  createdAt?: string;
 }
 
-export type TabType = 'created' | 'participated' | 'resolved'
+export type StakeLedgerItem = {
+  id: string
+  callId: string
+  userAddress: string
+  amount: number
+  position: 'YES' | 'NO'
+  profitLoss?: number | null
+  transactionHash?: string | null
+  createdAt: string
+  updatedAt: string
+  resolutionStatus: 'PENDING' | 'RESOLVED'
+  call?: {
+    id: string
+    description: string
+    outcome: 'YES' | 'NO' | 'PENDING'
+    resolvedAt?: string | null
+    expiresAt?: string | null
+    createdAt: string
+  }
+}
+
+export type UserStakesResponse = {
+  data: StakeLedgerItem[]
+  total: number
+  page: number
+  limit: number
+}
+
+export type TabType = 'created' | 'participated' | 'resolved' | 'followers' | 'following'

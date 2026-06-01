@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN};
+use soroban_sdk::{contracttype, Address, BytesN, Env};
 
 /// Represents a finalized outcome after quorum is reached
 #[contracttype]
@@ -28,29 +28,94 @@ pub struct SignedOutcome {
     pub signature: BytesN<64>,
 }
 
-// ─── Storage Keys ─────────────────────────────────────────────────────────────
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleVote {
+    pub oracle: BytesN<32>,
+    pub outcome: u32,
+    pub price: i128,
+    pub timestamp: u64,
+}
 
 #[contracttype]
 #[derive(Clone)]
 pub enum InstanceKey {
-    /// The admin address
     Admin,
-    /// Map<BytesN<32>, bool> of trusted oracle pubkeys
     Oracles,
-    /// Minimum number of matching oracle votes needed to finalize
+    OracleList,
     Quorum,
-    /// FinalOutcome(call_id) ─ set once a call is settled
     FinalOutcome(u64),
-    /// Claimed(call_id, staker) ─ prevents double-claims
     Claimed(u64, Address),
+    FeeCollector,
+    FeeBps,
+    /// Stored CallRegistry address; set via set_registry() to avoid caller-supplied forgery
+    Registry,
+    DisputeWindow,
+    PendingOutcome(u64),     // stores Outcome after quorum, before finalization
+    DisputeWindowStart(u64), // ledger timestamp when quorum was reached
+    Paused,                  // Emergency pause flag for rogue oracle detection
+    Version,
 }
 
-/// Short-lived keys cleared after settlement (temporary storage tier)
+#[contracttype]
+#[derive(Clone)]
+pub enum PersistentKey {
+    Votes(u64),
+}
+
+
+/// A single price data point submitted by an oracle for TWAP calculation
+#[contracttype]
+#[derive(Clone)]
+pub struct PriceObservation {
+    pub price: i128,
+    pub timestamp: u64,
+}
 #[contracttype]
 #[derive(Clone)]
 pub enum TempKey {
-    /// (oracle_pubkey, call_id) ─ guards against duplicate oracle submissions
     Submission(BytesN<32>, u64),
-    /// (outcome_hash, call_id) ─ vote tally per outcome candidate before quorum
     VoteCount(BytesN<32>, u64),
+    PriceObservations(u64),
+}
+
+/// Store the CallRegistry address in instance storage.
+pub fn set_registry(env: &Env, registry: Address) {
+    env.storage()
+        .instance()
+        .set(&InstanceKey::Registry, &registry);
+}
+
+/// Read the stored CallRegistry address; panics if not set.
+pub fn get_registry(env: &Env) -> Address {
+    env.storage()
+        .instance()
+        .get(&InstanceKey::Registry)
+        .expect("registry not set")
+}
+
+pub fn set_dispute_window(env: &Env, secs: u64) {
+    env.storage()
+        .instance()
+        .set(&InstanceKey::DisputeWindow, &secs);
+}
+
+pub fn get_dispute_window(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&InstanceKey::DisputeWindow)
+        .unwrap_or(3600)
+}
+
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&InstanceKey::Paused)
+        .unwrap_or(false)
+}
+
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage()
+        .instance()
+        .set(&InstanceKey::Paused, &paused);
 }

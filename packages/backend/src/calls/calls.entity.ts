@@ -9,9 +9,10 @@ import {
 export enum CallStatus {
   DRAFT = 'DRAFT',
   OPEN = 'OPEN',
+  PAUSED = 'PAUSED', // <-- new: circuit breaker state
+  SETTLING = 'SETTLING',
   RESOLVED_YES = 'RESOLVED_YES',
   RESOLVED_NO = 'RESOLVED_NO',
-  SETTLING = 'SETTLING',
 }
 
 @Entity('calls')
@@ -55,6 +56,12 @@ export class CallEntity {
     default: CallStatus.DRAFT,
   })
   status: CallStatus;
+
+  @Column({ type: 'boolean', default: false })
+  isHidden: boolean;
+
+  @Column({ type: 'int', default: 0 })
+  reportCount: number;
 
   @Column({ type: 'boolean', default: false })
   settled: boolean;

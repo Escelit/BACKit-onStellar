@@ -75,3 +75,5 @@ secret_*
 # Misc
 .vercel
 .netlify
+issue.md
+drips-wave-issues.md

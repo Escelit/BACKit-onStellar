@@ -1,105 +1,82 @@
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Body, 
-  Param, 
-  Query, 
-  HttpCode, 
+import {
+  Controller,
+  Post,
+  Get,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  Request,
+  ParseUUIDPipe,
+  HttpCode,
   HttpStatus,
-  ValidationPipe,
-  UsePipes
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { CallsService, CallStatus, CallFilter } from './calls.service';
-import { CreateCallDto } from './dto/create-call.dto';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+import { CallsService } from './calls.service';
+import { ReportCallDto } from './dto/report-call.dto';
+import { QueryCallsDto } from './dto/query-calls.dto';
+import { PrepareCallDto } from './dto/prepare-call.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('calls')
 @Controller('calls')
 export class CallsController {
   constructor(private readonly callsService: CallsService) {}
 
-  @Get()
-  @ApiOperation({ summary: 'List calls with filters' })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter by call status', enum: CallStatus })
-  @ApiQuery({ name: 'creator', required: false, description: 'Filter by creator address' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Number of items per page', type: Number })
-  @ApiQuery({ name: 'offset', required: false, description: 'Offset for pagination', type: Number })
-  @ApiResponse({ status: 200, description: 'Successfully retrieved calls.' })
-  @ApiResponse({ status: 400, description: 'Invalid query parameters.' })
-  async findAll(
-    @Query('status') status?: CallStatus,
-    @Query('creator') creator?: string,
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
-  ) {
-    const filters: CallFilter = {
-      status,
-      creatorAddress: creator,
-      limit: limit ? parseInt(limit.toString(), 10) : undefined,
-      offset: offset ? parseInt(offset.toString(), 10) : undefined,
-    };
-
-    return this.callsService.findAll(filters);
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get call details with participants' })
-  @ApiParam({ name: 'id', description: 'Call ID', type: Number })
-  @ApiResponse({ status: 200, description: 'Successfully retrieved call.' })
-  @ApiResponse({ status: 404, description: 'Call not found.' })
-  async findOne(@Param('id') id: string) {
-    const callId = parseInt(id, 10);
-    if (isNaN(callId)) {
-      throw new Error('Invalid call ID');
-    }
-    
-    return this.callsService.findOne(callId);
-  }
-
-  @Post('draft')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create call draft and pin to IPFS' })
-  @ApiResponse({ status: 201, description: 'Call draft created successfully.' })
-  @ApiResponse({ status: 400, description: 'Invalid input data.' })
-  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-  async createDraft(@Body() createCallDto: CreateCallDto) {
-    return this.callsService.createDraft(createCallDto);
-  }
-
-  @Get('user/:address')
-  @ApiOperation({ summary: 'Get calls by creator' })
-  @ApiParam({ name: 'address', description: 'Creator address' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Number of items per page', type: Number })
-  @ApiQuery({ name: 'offset', required: false, description: 'Offset for pagination', type: Number })
-  @ApiResponse({ status: 200, description: 'Successfully retrieved user calls.' })
-  async findByUser(
-    @Param('address') address: string,
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
-  ) {
-    const filters: CallFilter = {
-      limit: limit ? parseInt(limit.toString(), 10) : undefined,
-      offset: offset ? parseInt(offset.toString(), 10) : undefined,
-    };
-
-    return this.callsService.findByUser(address, filters);
-  }
-
   @Get('feed')
-  @ApiOperation({ summary: 'Get trending/recent calls for feed' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Number of of items per page', type: Number })
-  @ApiQuery({ name: 'offset', required: false, description: 'Offset for pagination', type: Number })
-  @ApiResponse({ status: 200, description: 'Successfully retrieved feed calls.' })
-  async getFeed(
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
-  ) {
-    const filters: CallFilter = {
-      limit: limit ? parseInt(limit.toString(), 10) : undefined,
-      offset: offset ? parseInt(offset.toString(), 10) : undefined,
-    };
+  @ApiOperation({ summary: 'Get paginated feed of visible calls' })
+  @ApiResponse({ status: 200, description: 'Feed returned successfully' })
+  getFeed(@Query() query: QueryCallsDto) {
+    return this.callsService.getFeed(query);
+  }
 
-    return this.callsService.getFeed(filters);
+  @Get('search')
+  @ApiOperation({ summary: 'Search calls by title or description' })
+  @ApiResponse({ status: 200, description: 'Search results returned' })
+  search(@Query() query: QueryCallsDto) {
+    return this.callsService.search(query);
+  }
+
+  @Post('prepare')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Pin call content to IPFS and return CID for on-chain creation',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Content pinned',
+    schema: {
+      example: {
+        cid: 'bafybeig...',
+        ipfsUrl: 'https://ipfs.io/ipfs/bafybeig...',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  prepareCall(@Body() dto: PrepareCallDto) {
+    return this.callsService.prepareCall(dto);
+  }
+
+  @Post(':id/report')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Report a call for moderation' })
+  @ApiParam({ name: 'id', description: 'Call UUID' })
+  @ApiResponse({ status: 200, description: 'Report submitted' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 409, description: 'Already reported' })
+  reportCall(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReportCallDto,
+    @Request() req: any,
+  ) {
+    return this.callsService.reportCall(id, req.user.address, dto);
   }
 }

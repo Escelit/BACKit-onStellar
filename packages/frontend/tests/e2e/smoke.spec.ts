@@ -10,7 +10,7 @@ test.describe('App Smoke Test', () => {
 
         // Check if main header is present
         const header = page.locator('h1');
-        await expect(header).toContainText('BACKit on Stellar');
+        await expect(header).toContainText('Predict With');
 
         // Check for main CTA or navigation elements
         const sampleProfileLink = page.getByRole('link', { name: /View Sample Profile/i });
@@ -25,7 +25,7 @@ test.describe('App Smoke Test', () => {
 
         // Verify navigation to profile page
         await expect(page).toHaveURL(/\/profile\//);
-
+        //what
         // Check if profile specific elements are present (even if skeleton)
         await expect(page.locator('body')).toBeVisible();
     });

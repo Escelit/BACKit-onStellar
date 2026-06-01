@@ -18,6 +18,9 @@ export class Call {
   @Index()
   creatorAddress: string;
 
+  @Column({ type: 'varchar', length: 255 })
+  title: string;
+
   @Column({ type: 'text' })
   description: string;
 
@@ -47,4 +50,10 @@ export class Call {
 
   @Column({ type: 'decimal', precision: 20, scale: 7, default: 0 })
   totalNoStake: number;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  stakeToken?: string;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  status?: string;
 }
