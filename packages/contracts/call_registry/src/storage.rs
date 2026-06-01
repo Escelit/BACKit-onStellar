@@ -16,6 +16,7 @@ pub enum DataKey {
     GlobalStats,
     GlobalStakerSeen(Address),
     Call(u64),
+    CallStakers(u64),
     StakerCalls(Address),
     CreatorStats(Address),
     UserStake(u64, Address, u32),
@@ -104,6 +105,43 @@ pub fn add_staker_call(env: &Env, staker: &Address, call_id: u64) {
 /// Retrieve all call IDs a staker has participated in, refreshing TTL if non-empty
 pub fn get_staker_calls(env: &Env, staker: &Address) -> soroban_sdk::Vec<u64> {
     let key = DataKey::StakerCalls(staker.clone());
+    let result = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+    if !result.is_empty() {
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+    }
+    result
+}
+
+pub fn add_call_staker(env: &Env, call_id: u64, staker: &Address) {
+    let key = DataKey::CallStakers(call_id);
+    let mut stakers: soroban_sdk::Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+
+    if !stakers.iter().any(|existing| existing == *staker) {
+        stakers.push_back(staker.clone());
+        env.storage().persistent().set(&key, &stakers);
+    }
+
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+pub fn get_call_stakers(env: &Env, call_id: u64) -> soroban_sdk::Vec<Address> {
+    let key = DataKey::CallStakers(call_id);
     let result = env
         .storage()
         .persistent()

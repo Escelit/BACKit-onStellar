@@ -26,6 +26,13 @@ pub const CONTRACT_VERSION: u32 = 1;
 #[contract]
 pub struct CallRegistry;
 
+fn build_start_price_message(env: &Env, call_id: u64, price: i128) -> Bytes {
+    let mut raw = Bytes::from_slice(env, b"start_price:");
+    raw.append(&Bytes::from_slice(env, &call_id.to_be_bytes()));
+    raw.append(&Bytes::from_slice(env, &price.to_be_bytes()));
+    raw
+}
+
 fn evaluate_condition_impl(condition: &ConditionType, start_price: i128, end_price: i128) -> bool {
     match condition {
         ConditionType::TargetAbove(target) => end_price > *target,
@@ -100,6 +107,7 @@ impl CallRegistry {
         creator: Address,
         stake_token: Address,
         stake_amount: i128,
+        start_price: i128,
         end_ts: u64,
         token_address: Address,
         pair_id: Bytes,
@@ -111,6 +119,9 @@ impl CallRegistry {
         let config = get_config(&env).ok_or(CallRegistryError::NotInitialized)?;
         assert!(!config.paused, "Contract is paused");
         if stake_amount < config.min_stake || stake_amount <= 0 {
+            return Err(CallRegistryError::InvalidStakeAmount);
+        }
+        if start_price <= 0 {
             return Err(CallRegistryError::InvalidStakeAmount);
         }
 
@@ -141,7 +152,7 @@ impl CallRegistry {
             total_up_stake: 0,
             total_down_stake: 0,
             outcome: 0,
-            start_price: 0,
+            start_price,
             end_price: 0,
             condition,
             settled: false,
@@ -167,6 +178,7 @@ impl CallRegistry {
             &creator,
             &stake_token,
             stake_amount,
+            start_price,
             end_ts,
             &token_address,
             &pair_id,
@@ -309,6 +321,7 @@ impl CallRegistry {
                     set_up_staker_count(&env, call_id, get_up_staker_count(&env, call_id) + 1);
                 }
                 set_user_stake(&env, call_id, &staker, position, new_stake);
+                add_call_staker(&env, call_id, &staker);
                 call.total_up_stake += amount;
             }
             StakePosition::Down => {
@@ -317,6 +330,7 @@ impl CallRegistry {
                     set_down_staker_count(&env, call_id, get_down_staker_count(&env, call_id) + 1);
                 }
                 set_user_stake(&env, call_id, &staker, position, new_stake);
+                add_call_staker(&env, call_id, &staker);
                 call.total_down_stake += amount;
             }
         }
@@ -614,6 +628,18 @@ impl CallRegistry {
         calls
     }
 
+    /// Get all stakers that have participated in a call.
+    pub fn get_call_stakers(env: Env, call_id: u64) -> Result<Vec<Address>, CallRegistryError> {
+        get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
+        Ok(storage::get_call_stakers(&env, call_id))
+    }
+
+    /// Get the number of unique stakers that have participated in a call.
+    pub fn get_call_staker_count(env: Env, call_id: u64) -> Result<u32, CallRegistryError> {
+        get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
+        Ok(storage::get_call_stakers(&env, call_id).len() as u32)
+    }
+
     /// Get the stake amount a staker has on a specific call position.
     /// # Errors
     /// * [`CallRegistryError::CallNotFound`]    – `call_id` does not exist.
@@ -642,6 +668,43 @@ impl CallRegistry {
     /// Get contract-wide aggregated statistics.
     pub fn get_global_stats(env: Env) -> GlobalStats {
         storage::get_global_stats(&env)
+    }
+
+    /// Set or correct a call's start price using an oracle-signed payload.
+    pub fn set_start_price(
+        env: Env,
+        call_id: u64,
+        price: i128,
+        oracle_pubkey: BytesN<32>,
+        signature: BytesN<64>,
+    ) -> Result<Call, CallRegistryError> {
+        if price <= 0 {
+            return Err(CallRegistryError::InvalidStakeAmount);
+        }
+
+        let config = get_config(&env).ok_or(CallRegistryError::NotInitialized)?;
+        config.outcome_manager.require_auth();
+
+        let mut call = get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
+        if call.settled {
+            return Err(CallRegistryError::CallSettled);
+        }
+        if call.cancelled {
+            panic!("Call has been cancelled");
+        }
+        if call.voided {
+            panic!("Call has been voided");
+        }
+
+        let message = build_start_price_message(&env, call_id, price);
+        env.crypto()
+            .ed25519_verify(&oracle_pubkey, &message, &signature);
+
+        call.start_price = price;
+        set_call(&env, &call);
+        extend_storage_ttl(&env);
+
+        Ok(call)
     }
 
     /// Return the current contract version.

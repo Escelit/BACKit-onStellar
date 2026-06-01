@@ -19,6 +19,7 @@ impl MockToken {
 }
 
 const TEST_MIN_STAKE: i128 = 1_000_000;
+const TEST_START_PRICE: i128 = 100_000_000;
 
 fn setup_fuzz_env() -> (Env, CallRegistryClient<'static>, Address, Address, Address) {
     let env = Env::default();
@@ -52,6 +53,7 @@ fn create_test_call(
         creator,
         stake_token,
         &100_000_000_i128,
+        &TEST_START_PRICE,
         &end_ts,
         &token_address,
         &pair_id,
@@ -316,6 +318,7 @@ fn test_fuzz_extreme_timestamp_near_max() {
             &creator,
             &stake_token,
             &100_000_000,
+            &TEST_START_PRICE,
             &end_ts,
             &token_address,
             &pair_id,
