@@ -67,6 +67,8 @@ export class HealthController {
 
     const payload = {
       status,
+      version: process.env.npm_package_version ?? '1.0.0',
+      apiVersion: 'v1',
       database,
       stellar_rpc,
       memory_heap_mb,
