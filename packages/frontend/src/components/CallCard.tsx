@@ -2,7 +2,6 @@
 
 import StakeBar from "./StakeBar";
 import ShareButton from "./ShareButton";
-import Image from "next/image";
 
 interface CallCardProps {
   call: any;
