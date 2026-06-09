@@ -35,7 +35,6 @@ export class Users {
   @Column({ type: 'varchar', nullable: true })
   avatarCid: string;
 
-
   @ManyToOne(() => Users, { nullable: true, onDelete: 'SET NULL' })
   referredBy: Users | null;
 

@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { UsersService } from './users.service';
 import { Users } from './entities/users.entity';
@@ -126,7 +130,10 @@ describe('UsersService', () => {
       });
       followsRepo.count.mockResolvedValue(0);
 
-      const file = { buffer: Buffer.from('test') } as any;
+      const file = {
+        buffer: Buffer.from('test'),
+        originalname: 'avatar.png',
+      } as unknown as Express.Multer.File;
       const result = await service.createProfile(
         { walletAddress: 'GC1', displayName: 'Alice', bio: 'Hello' },
         file,
@@ -155,12 +162,21 @@ describe('UsersService', () => {
       };
       usersRepo.findOne.mockResolvedValueOnce(existingUser);
       usersRepo.save.mockResolvedValueOnce(existingUser);
-      usersRepo.findOne.mockResolvedValueOnce({ ...existingUser, displayName: 'NewName', bio: 'NewBio', avatarCid: 'new_cid', badges: [] });
+      usersRepo.findOne.mockResolvedValueOnce({
+        ...existingUser,
+        displayName: 'NewName',
+        bio: 'NewBio',
+        avatarCid: 'new_cid',
+        badges: [],
+      });
       followsRepo.count.mockResolvedValue(0);
 
       ipfsService.pinAvatar.mockResolvedValueOnce('new_cid');
 
-      const file = { buffer: Buffer.from('test2') } as any;
+      const file = {
+        buffer: Buffer.from('test2'),
+        originalname: 'avatar2.png',
+      } as unknown as Express.Multer.File;
       const result = await service.updateProfile(
         { walletAddress: 'GC1', displayName: 'NewName', bio: 'NewBio' },
         file,

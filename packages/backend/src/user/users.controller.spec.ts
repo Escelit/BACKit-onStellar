@@ -2,11 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { CreateProfileDto, UpdateProfileDto } from './dto/profile.dto';
-import { FollowDto } from './dto/follow.dto';
 
 describe('UsersController', () => {
   let controller: UsersController;
-  let service: UsersService;
 
   const mockUsersService = {
     follow: jest.fn(),
@@ -30,7 +28,6 @@ describe('UsersController', () => {
     }).compile();
 
     controller = module.get<UsersController>(UsersController);
-    service = module.get<UsersService>(UsersService);
     jest.clearAllMocks();
   });
 
@@ -40,8 +37,15 @@ describe('UsersController', () => {
 
   describe('profile CRUD', () => {
     it('should create a profile', async () => {
-      const dto: CreateProfileDto = { walletAddress: 'GC1', displayName: 'Alice', bio: 'Hello' };
-      const file = { buffer: Buffer.from('test') } as any;
+      const dto: CreateProfileDto = {
+        walletAddress: 'GC1',
+        displayName: 'Alice',
+        bio: 'Hello',
+      };
+      const file = {
+        buffer: Buffer.from('test'),
+        originalname: 'avatar.png',
+      } as unknown as Express.Multer.File;
       mockUsersService.createProfile.mockResolvedValue({ id: 'u1', ...dto });
 
       const result = await controller.createProfile(dto, file);
@@ -51,9 +55,16 @@ describe('UsersController', () => {
     });
 
     it('should update a profile', async () => {
-      const dto: UpdateProfileDto = { walletAddress: 'GC1', displayName: 'AliceUpdated' };
+      const dto: UpdateProfileDto = {
+        walletAddress: 'GC1',
+        displayName: 'AliceUpdated',
+      };
       const file = undefined;
-      mockUsersService.updateProfile.mockResolvedValue({ id: 'u1', walletAddress: 'GC1', displayName: 'AliceUpdated' });
+      mockUsersService.updateProfile.mockResolvedValue({
+        id: 'u1',
+        walletAddress: 'GC1',
+        displayName: 'AliceUpdated',
+      });
 
       const result = await controller.updateProfile(dto, file);
 
@@ -62,7 +73,10 @@ describe('UsersController', () => {
     });
 
     it('should get a profile by address', async () => {
-      mockUsersService.getUserByAddress.mockResolvedValue({ id: 'u1', walletAddress: 'GC1' });
+      mockUsersService.getUserByAddress.mockResolvedValue({
+        id: 'u1',
+        walletAddress: 'GC1',
+      });
 
       const result = await controller.getProfile('GC1');
 

@@ -48,9 +48,10 @@ export class UsersService {
       // Default notification preferences on user creation
       await this.preferenceService
         .initializePreferences(walletAddress)
-        .catch((err) => {
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
           this.logger.error(
-            `Failed to initialize notification preferences for ${walletAddress}: ${err.message}`,
+            `Failed to initialize notification preferences for ${walletAddress}: ${msg}`,
           );
         });
     }
@@ -153,9 +154,10 @@ export class UsersService {
     // Default notification preferences on user creation
     await this.preferenceService
       .initializePreferences(walletAddress)
-      .catch((err) => {
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
         this.logger.error(
-          `Failed to initialize notification preferences for ${walletAddress}: ${err.message}`,
+          `Failed to initialize notification preferences for ${walletAddress}: ${msg}`,
         );
       });
     return savedUser;
@@ -233,7 +235,9 @@ export class UsersService {
       where: { walletAddress: updateProfileDto.walletAddress },
     });
     if (!user) {
-      throw new NotFoundException(`User ${updateProfileDto.walletAddress} not found`);
+      throw new NotFoundException(
+        `User ${updateProfileDto.walletAddress} not found`,
+      );
     }
 
     if (avatarFile) {
