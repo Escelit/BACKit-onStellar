@@ -39,7 +39,7 @@ mod call_registry {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, CallRegistry);
+    let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
@@ -126,7 +126,7 @@ mod call_registry {
     #[test]
     fn test_initialize() {
         let (env, admin, outcome_manager, _) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+    let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -2106,7 +2106,7 @@ mod native_xlm {
         let admin = Address::generate(&env);
         let outcome_manager = Address::generate(&env);
 
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &MIN_STAKE);
@@ -2155,7 +2155,7 @@ mod native_xlm {
 
     #[test]
     fn test_native_xlm_address_helper() {
-        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let (_env, client, _admin, _om, xlm_sac) = setup_with_xlm();
         assert_eq!(client.native_xlm_address(), xlm_sac);
         assert!(client.is_native_xlm_address(&xlm_sac));
     }
@@ -2342,7 +2342,7 @@ mod native_xlm {
 
     #[test]
     fn test_xlm_sentinel_not_counted_as_whitelisted_sac_token() {
-        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let (_env, client, _admin, _om, xlm_sac) = setup_with_xlm();
         let sentinel = xlm_sac.clone();
 
         // The sentinel is NOT in the whitelist map — it's handled separately.
