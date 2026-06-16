@@ -1251,7 +1251,11 @@ mod call_registry {
 
     // ── void_call / claim_void_refund ─────────────────────────────────────────
 
-    fn make_call(env: &Env, client: &CallRegistryClient<'_>, creator: &Address) -> (crate::types::Call, Address) {
+    fn make_call(
+        env: &Env,
+        client: &CallRegistryClient<'_>,
+        creator: &Address,
+    ) -> (crate::types::Call, Address) {
         let stake_token = env.register_contract(None, MockToken);
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(env);
@@ -1895,12 +1899,26 @@ mod call_registry {
         client.whitelist_token(&stake_token);
 
         create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &2000u64, &token_address, &pair_id, &ipfs_cid, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+            &2,
         );
         create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &3000u64, &token_address, &pair_id, &ipfs_cid, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+            &2,
         );
 
         let stats = client.get_storage_stats();

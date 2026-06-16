@@ -5,14 +5,15 @@ use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, Ma
 mod admin;
 mod errors;
 mod events;
-mod storage;
-mod types;
-#[cfg(test)]
-mod test;
 #[cfg(test)]
 mod fuzz_tests;
+mod shares;
+mod storage;
+#[cfg(test)]
+mod test;
+mod types;
 
-use backit_shared::{is_valid_outcome, OUTCOME_DOWN, OUTCOME_UP};
+use backit_shared::{OUTCOME_DOWN, OUTCOME_UP};
 use errors::CallRegistryError;
 use events::*;
 use storage::*;
@@ -58,6 +59,10 @@ fn evaluate_condition_impl(condition: &ConditionType, start_price: i128, end_pri
     }
 }
 
+fn transfer_token(env: &Env, stake_token: &Address, from: &Address, to: &Address, amount: i128) {
+    token::Client::new(env, stake_token).transfer(from, to, &amount);
+}
+
 #[contractimpl]
 impl CallRegistry {
     /// Initialise the contract with an admin and an outcome manager.
@@ -85,6 +90,7 @@ impl CallRegistry {
             metadata_version: 0,
             paused: false,
             staking_cutoff_secs: 300,
+            share_wasm_hash: None,
         };
 
         set_config(&env, &config);
@@ -98,6 +104,19 @@ impl CallRegistry {
         env.events()
             .publish(("call_registry", "initialized"), (admin, outcome_manager));
 
+        Ok(())
+    }
+
+    /// Set the share token WASM hash (admin only).
+    /// Must be called after initialize before create_call can deploy share tokens.
+    pub fn set_share_wasm_hash(
+        env: Env,
+        share_wasm_hash: BytesN<32>,
+    ) -> Result<(), CallRegistryError> {
+        let mut config = get_config(&env).ok_or(CallRegistryError::NotInitialized)?;
+        config.admin.require_auth();
+        config.share_wasm_hash = Some(share_wasm_hash);
+        set_config(&env, &config);
         Ok(())
     }
 
@@ -121,6 +140,7 @@ impl CallRegistry {
     ) -> Result<Call, CallRegistryError> {
         creator.require_auth();
 
+        let mut share_tokens = Map::new(&env);
         let config = get_config(&env).ok_or(CallRegistryError::NotInitialized)?;
         assert!(!config.paused, "Contract is paused");
         if stake_amount < config.min_stake || stake_amount <= 0 {
@@ -158,6 +178,13 @@ impl CallRegistry {
             stakes.set(i, Map::new(&env));
         }
 
+        if let Some(ref wasm_hash) = config.share_wasm_hash {
+            for i in 1..=outcome_count {
+                let token_addr = shares::deploy_share_token(&env, wasm_hash, call_id, i);
+                share_tokens.set(i, token_addr);
+            }
+        }
+
         let call = Call {
             id: call_id,
             creator: creator.clone(),
@@ -179,16 +206,17 @@ impl CallRegistry {
             created_at: current_timestamp,
             cancelled: false,
             metadata_version: 0,
+            share_tokens,
         };
 
         set_call(&env, &call);
         record_call_created(&env);
-        
+
         // Track creator reputation: increment total_created
         let mut creator_stats = get_creator_stats(&env, &creator);
         creator_stats.total_created += 1;
         set_creator_stats(&env, &creator, &creator_stats);
-        
+
         extend_storage_ttl(&env);
 
         emit_call_created(
@@ -342,6 +370,11 @@ impl CallRegistry {
         let token_client = token::Client::new(&env, &call.stake_token);
         token_client.transfer(&staker, &env.current_contract_address(), &amount);
 
+        if let Some(share_token) = call.share_tokens.get(position) {
+            shares::mint_shares(&env, &share_token, &staker, amount);
+            emit_shares_minted(&env, call_id, &staker, position, amount);
+        }
+
         // Update stake maps with generalized position support
         let current_total = call.outcome_stakes.get(position).unwrap_or(0);
         call.outcome_stakes.set(position, current_total + amount);
@@ -352,7 +385,13 @@ impl CallRegistry {
         call.stakes.set(position, outcome_stakers);
 
         add_call_staker(&env, call_id, &staker);
-        set_user_stake(&env, call_id, &staker, position, current_staker_stake + amount);
+        set_user_stake(
+            &env,
+            call_id,
+            &staker,
+            position,
+            current_staker_stake + amount,
+        );
 
         set_call(&env, &call);
         add_staker_call(&env, &staker, call_id);
@@ -362,6 +401,97 @@ impl CallRegistry {
         emit_stake_added(&env, call_id, &staker, amount, position);
 
         Ok(call)
+    }
+
+    pub fn redeem_shares(
+        env: Env,
+        redeemer: Address,
+        call_id: u64,
+    ) -> Result<i128, CallRegistryError> {
+        redeemer.require_auth();
+
+        let call = get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
+
+        if call.outcome == 0 {
+            panic!("call not yet resolved");
+        }
+        if !call.settled {
+            panic!("call not yet settled");
+        }
+
+        let winning_outcome = call.outcome;
+        let share_token = match call.share_tokens.get(winning_outcome) {
+            Some(t) => t,
+            None => panic!("share tokens not configured for this call"),
+        };
+
+        // Check redeemer's winning share balance
+        let balance = shares::share_balance(&env, &share_token, &redeemer);
+        if balance <= 0 {
+            panic!("no winning shares to redeem");
+        }
+
+        // Total winning pool and total stakes
+        let total_winning_stakes = call.outcome_stakes.get(winning_outcome).unwrap_or(0);
+        let total_all_stakes: i128 = (1..=call.outcome_count)
+            .map(|i| call.outcome_stakes.get(i).unwrap_or(0))
+            .sum();
+
+        // Payout: redeemer's share of winning pool gets proportional total pot
+        // Each winning share is worth: total_all_stakes / total_winning_stakes
+        let payout = if total_winning_stakes > 0 {
+            (balance as i128) * total_all_stakes / total_winning_stakes
+        } else {
+            0
+        };
+
+        if payout <= 0 {
+            panic!("zero payout");
+        }
+
+        // Burn the winning shares
+        shares::burn_shares(&env, &share_token, &redeemer, balance);
+
+        // Transfer payout from contract to redeemer
+        transfer_token(
+            &env,
+            &call.stake_token,
+            &env.current_contract_address(),
+            &redeemer,
+            payout,
+        );
+
+        emit_shares_redeemed(&env, call_id, &redeemer, winning_outcome, balance);
+
+        Ok(payout)
+    }
+
+    pub fn transfer_shares(
+        env: Env,
+        from: Address,
+        to: Address,
+        call_id: u64,
+        outcome: u32,
+        amount: i128,
+    ) -> Result<(), CallRegistryError> {
+        from.require_auth();
+
+        let call = get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
+
+        if outcome < 1 || outcome > call.outcome_count {
+            return Err(CallRegistryError::InvalidPosition);
+        }
+
+        let share_token = match call.share_tokens.get(outcome) {
+            Some(t) => t,
+            None => return Err(CallRegistryError::NotInitialized), // or a dedicated error
+        };
+
+        soroban_sdk::token::Client::new(&env, &share_token).transfer(&from, &to, &amount);
+
+        emit_shares_transferred(&env, call_id, &from, &to, outcome, amount);
+
+        Ok(())
     }
 
     /// Set the maximum individual stake per user per position per call (admin only).
@@ -429,18 +559,18 @@ impl CallRegistry {
         // Track creator reputation: increment total_resolved and conditionally total_correct
         let mut creator_stats = get_creator_stats(&env, &call.creator);
         creator_stats.total_resolved += 1;
-        
+
         // Check if creator staked on the winning position
         let creator_winning_stake = match outcome {
             OUTCOME_UP => get_user_stake(&env, call.id, &call.creator, 1),
             OUTCOME_DOWN => get_user_stake(&env, call.id, &call.creator, 2),
             _ => 0,
         };
-        
+
         if creator_winning_stake > 0 {
             creator_stats.total_correct += 1;
         }
-        
+
         set_creator_stats(&env, &call.creator, &creator_stats);
 
         set_call(&env, &call);
@@ -758,7 +888,11 @@ impl CallRegistry {
     pub fn get_storage_stats(env: Env) -> StorageStats {
         let stats = storage::get_storage_stats(&env);
         if stats.instance_entry_count >= INSTANCE_ENTRY_WARNING_THRESHOLD {
-            events::emit_storage_warning(&env, stats.instance_entry_count, stats.estimated_instance_bytes);
+            events::emit_storage_warning(
+                &env,
+                stats.instance_entry_count,
+                stats.estimated_instance_bytes,
+            );
         }
         stats
     }
