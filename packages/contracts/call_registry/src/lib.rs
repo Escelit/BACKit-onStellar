@@ -338,7 +338,7 @@ impl CallRegistry {
     /// freely off-chain in the account's classic DataEntry at a flat rate of 0.5 XLM (no recurring rent).
     /// View: retrieve a DataEntry from the contract's Stellar account for a call.
     /// Returns `None` when no entry exists for the key.
-    pub fn get_call_data_entry(env: Env, call_id: u64, key: Bytes) -> Option<Bytes> {
+    pub fn get_call_data_entry(env: Env, _call_id: u64, key: Bytes) -> Option<Bytes> {
         env.storage().persistent().get(&key)
     }
 

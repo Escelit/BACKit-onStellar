@@ -1816,7 +1816,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
 
         // Creator creates a call
-        let _call = create_call_with_default_condition(
+        let call = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1829,11 +1829,11 @@ mod call_registry {
         );
 
         // Creator stakes on UP position (winning side)
-        client.stake_on_call(&creator, &1u64, &50_000_000_i128, &1);
+        client.stake_on_call(&creator, &call.id, &50_000_000_i128, &1);
 
         // Resolve as UP (creator staked on winning side)
         env.ledger().set_timestamp(2100);
-        client.resolve_call(&1u64, &1u32, &150_000_000_i128);
+        client.resolve_call(&call.id, &1u32, &150_000_000_i128);
 
         let stats = client.get_creator_stats_view(&creator);
         assert_eq!(stats.total_created, 1);
@@ -1858,7 +1858,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
 
         // Creator creates a call
-        let _call = create_call_with_default_condition(
+        let call = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1871,11 +1871,11 @@ mod call_registry {
         );
 
         // Creator stakes on UP (but outcome will be DOWN, so incorrect)
-        client.stake_on_call(&creator, &1u64, &50_000_000_i128, &1);
+        client.stake_on_call(&creator, &call.id, &50_000_000_i128, &1);
 
         // Resolve as DOWN (creator staked on losing side)
         env.ledger().set_timestamp(2100);
-        client.resolve_call(&1u64, &2u32, &50_000_000_i128);
+        client.resolve_call(&call.id, &2u32, &50_000_000_i128);
 
         let stats = client.get_creator_stats_view(&creator);
         assert_eq!(stats.total_created, 1);
@@ -1900,7 +1900,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
 
         // Create call 1 and creator stakes on UP
-        let _call1 = create_call_with_default_condition(
+        let call1 = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1911,10 +1911,10 @@ mod call_registry {
             &metadata_hash,
             &2,
         );
-        client.stake_on_call(&creator, &1u64, &50_000_000_i128, &1);
+        client.stake_on_call(&creator, &call1.id, &50_000_000_i128, &1);
 
         // Create call 2 and creator stakes on DOWN
-        let _call2 = create_call_with_default_condition(
+        let call2 = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1925,10 +1925,10 @@ mod call_registry {
             &metadata_hash,
             &2,
         );
-        client.stake_on_call(&creator, &2u64, &50_000_000_i128, &2);
+        client.stake_on_call(&creator, &call2.id, &50_000_000_i128, &2);
 
         // Create call 3 and creator stakes on UP
-        let _call3 = create_call_with_default_condition(
+        let call3 = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1939,19 +1939,19 @@ mod call_registry {
             &metadata_hash,
             &2,
         );
-        client.stake_on_call(&creator, &3u64, &50_000_000_i128, &1);
+        client.stake_on_call(&creator, &call3.id, &50_000_000_i128, &1);
 
         // Resolve call 1 as UP (correct - creator staked UP)
         env.ledger().set_timestamp(2100);
-        client.resolve_call(&1u64, &1u32, &150_000_000_i128);
+        client.resolve_call(&call1.id, &1u32, &150_000_000_i128);
 
         // Resolve call 2 as UP (incorrect - creator staked DOWN)
         env.ledger().set_timestamp(3100);
-        client.resolve_call(&2u64, &1u32, &150_000_000_i128);
+        client.resolve_call(&call2.id, &1u32, &150_000_000_i128);
 
         // Resolve call 3 as UP (correct - creator staked UP)
         env.ledger().set_timestamp(4100);
-        client.resolve_call(&3u64, &1u32, &150_000_000_i128);
+        client.resolve_call(&call3.id, &1u32, &150_000_000_i128);
 
         let stats = client.get_creator_stats_view(&creator);
         assert_eq!(stats.total_created, 3);
@@ -2133,6 +2133,7 @@ mod native_xlm {
         let token_address = Address::generate(env);
         let pair_id = Bytes::from_slice(env, b"XLM/USD");
         let metadata_hash = BytesN::from_array(env, &[0u8; 32]);
+        let ipfs_cid = Bytes::from_slice(env, b"QmXxxx");
 
         client.create_call(
             creator,
