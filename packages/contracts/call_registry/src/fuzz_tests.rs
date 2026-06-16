@@ -1,4 +1,6 @@
 #![cfg(test)]
+#![allow(deprecated)]
+#![allow(unused)]
 
 use soroban_sdk::{
     contract, contractimpl,
@@ -49,15 +51,18 @@ fn create_test_call(
 
     let call = client.create_call(
         creator,
-        stake_token,
-        &100_000_000_i128,
-        &TEST_START_PRICE,
-        &end_ts,
-        &token_address,
-        &pair_id,
-        &metadata_hash,
-        &ConditionType::TargetAbove(100_000_000_i128),
-        &2,
+        &crate::types::CallInitArgs {
+            stake_token: stake_token.clone(),
+            stake_amount: 100_000_000_i128,
+            start_price: TEST_START_PRICE,
+            end_ts: end_ts,
+            token_address: token_address.clone(),
+            pair_id: pair_id.clone(),
+            ipfs_cid: Bytes::from_slice(env, b"QmXxxx"),
+            metadata_hash: metadata_hash.clone(),
+            condition: ConditionType::TargetAbove(100_000_000_i128),
+            outcome_count: 2,
+        }
     );
 
     call.id
@@ -316,15 +321,18 @@ fn test_fuzz_extreme_timestamp_near_max() {
     for &end_ts in &extreme_timestamps {
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000,
-            &TEST_START_PRICE,
-            &end_ts,
-            &token_address,
-            &pair_id,
-            &metadata_hash,
-            &ConditionType::TargetAbove(100_000_000),
-            &2,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000,
+                start_price: TEST_START_PRICE,
+                end_ts,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000),
+                outcome_count: 2,
+            }
         );
 
         let staker = Address::generate(&env);

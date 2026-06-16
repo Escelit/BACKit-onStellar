@@ -11,6 +11,22 @@ pub enum ConditionType {
     Range(i128, i128),
 }
 
+/// Arguments for initializing a new Call
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CallInitArgs {
+    pub stake_token: Address,
+    pub stake_amount: i128,
+    pub start_price: i128,
+    pub end_ts: u64,
+    pub token_address: Address,
+    pub pair_id: Bytes,
+    pub ipfs_cid: Bytes,
+    pub metadata_hash: BytesN<32>,
+    pub condition: ConditionType,
+    pub outcome_count: u32,
+}
+
 /// Represents a prediction call with all its metadata
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]

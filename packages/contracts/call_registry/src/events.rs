@@ -1,3 +1,6 @@
+#![allow(deprecated)]
+#![allow(unused)]
+
 use soroban_sdk::symbol_short;
 use soroban_sdk::{Address, Bytes, BytesN, Env, Symbol};
 

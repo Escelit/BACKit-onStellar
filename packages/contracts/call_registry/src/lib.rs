@@ -58,8 +58,6 @@ use errors::CallRegistryError;
 use events::*;
 use storage::*;
 use types::*;
-use soroban_sdk::host::stellar_account;
-use soroban_sdk::Bytes as SdkBytes;
 
 const MAX_CALL_PAGE_SIZE: u32 = 20;
 pub const CONTRACT_VERSION: u32 = 1;
@@ -160,18 +158,22 @@ impl CallRegistry {
     pub fn create_call(
         env: Env,
         creator: Address,
-        stake_token: Address,
-        stake_amount: i128,
-        start_price: i128,
-        end_ts: u64,
-        token_address: Address,
-        pair_id: Bytes,
-        ipfs_cid: Bytes,
-        metadata_hash: BytesN<32>,
-        condition: ConditionType,
-        outcome_count: u32,
+        args: CallInitArgs,
     ) -> Result<Call, CallRegistryError> {
         creator.require_auth();
+
+        let CallInitArgs {
+            stake_token,
+            stake_amount,
+            start_price,
+            end_ts,
+            token_address,
+            pair_id,
+            ipfs_cid,
+            metadata_hash,
+            condition,
+            outcome_count,
+        } = args;
 
         let config = get_config(&env).ok_or(CallRegistryError::NotInitialized)?;
         assert!(!config.paused, "Contract is paused");
@@ -280,62 +282,48 @@ impl CallRegistry {
         // Implement a small base64 encoder that works in no_std using soroban vectors.
         fn encode_base64(env: &Env, input: &Bytes) -> Bytes {
             let table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            let mut out: Vec<u8> = Vec::new(env);
-            let mut i = 0usize;
-            let input_len = input.len() as usize;
+            let mut out = alloc::vec::Vec::new();
+            let mut i = 0u32;
+            let input_len = input.len();
             while i + 3 <= input_len {
-                let b0 = input.get(i).unwrap_or(&0u8);
-                let b1 = input.get(i + 1).unwrap_or(&0u8);
-                let b2 = input.get(i + 2).unwrap_or(&0u8);
-                let n = ((*b0 as u32) << 16) | ((*b1 as u32) << 8) | (*b2 as u32);
-                let c0 = table[( (n >> 18) & 0x3F) as usize];
-                let c1 = table[( (n >> 12) & 0x3F) as usize];
-                let c2 = table[( (n >> 6) & 0x3F) as usize];
-                let c3 = table[( n & 0x3F) as usize];
-                out.push_back(c0);
-                out.push_back(c1);
-                out.push_back(c2);
-                out.push_back(c3);
+                let b0 = input.get(i).unwrap_or(0);
+                let b1 = input.get(i + 1).unwrap_or(0);
+                let b2 = input.get(i + 2).unwrap_or(0);
+                let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+                out.push(table[((n >> 18) & 0x3F) as usize]);
+                out.push(table[((n >> 12) & 0x3F) as usize]);
+                out.push(table[((n >> 6) & 0x3F) as usize]);
+                out.push(table[(n & 0x3F) as usize]);
                 i += 3;
             }
             let rem = input_len - i;
             if rem == 1 {
-                let b0 = input.get(i).unwrap_or(&0u8);
-                let n = (*b0 as u32) << 16;
-                let c0 = table[((n >> 18) & 0x3F) as usize];
-                let c1 = table[((n >> 12) & 0x3F) as usize];
-                out.push_back(c0);
-                out.push_back(c1);
-                out.push_back(b'=');
-                out.push_back(b'=');
+                let b0 = input.get(i).unwrap_or(0);
+                let n = (b0 as u32) << 16;
+                out.push(table[((n >> 18) & 0x3F) as usize]);
+                out.push(table[((n >> 12) & 0x3F) as usize]);
+                out.push(b'=');
+                out.push(b'=');
             } else if rem == 2 {
-                let b0 = input.get(i).unwrap_or(&0u8);
-                let b1 = input.get(i + 1).unwrap_or(&0u8);
-                let n = ((*b0 as u32) << 16) | ((*b1 as u32) << 8);
-                let c0 = table[((n >> 18) & 0x3F) as usize];
-                let c1 = table[((n >> 12) & 0x3F) as usize];
-                let c2 = table[((n >> 6) & 0x3F) as usize];
-                out.push_back(c0);
-                out.push_back(c1);
-                out.push_back(c2);
-                out.push_back(b'=');
+                let b0 = input.get(i).unwrap_or(0);
+                let b1 = input.get(i + 1).unwrap_or(0);
+                let n = ((b0 as u32) << 16) | ((b1 as u32) << 8);
+                out.push(table[((n >> 18) & 0x3F) as usize]);
+                out.push(table[((n >> 12) & 0x3F) as usize]);
+                out.push(table[((n >> 6) & 0x3F) as usize]);
+                out.push(b'=');
             }
-            // Convert Vec<u8> to Bytes
-            let mut buf: Vec<u8> = Vec::new(env);
-            for b in out.iter() {
-                buf.push_back(*b);
-            }
-            Bytes::from_slice(env, &buf.iter().map(|b| *b).collect::<Vec<u8>>())
+            Bytes::from_slice(env, &out)
         }
 
-        let key_cid = SdkBytes::from_slice(&env, format!("call_{}_cid", call_id).as_bytes());
-        let key_hash = SdkBytes::from_slice(&env, format!("call_{}_hash", call_id).as_bytes());
+        let key_cid = Bytes::from_slice(&env, format!("call_{}_cid", call_id).as_bytes());
+        let key_hash = Bytes::from_slice(&env, format!("call_{}_hash", call_id).as_bytes());
         // Base64-encode the ipfs_cid and the metadata_hash raw bytes
         let cid_b64 = encode_base64(&env, &ipfs_cid);
-        let raw_hash = SdkBytes::from_slice(&env, &metadata_hash.to_array());
+        let raw_hash = Bytes::from_slice(&env, &metadata_hash.to_array());
         let hash_b64 = encode_base64(&env, &raw_hash);
-        let _ = stellar_account::set_data(&env, &env.current_contract_address(), &key_cid, &cid_b64);
-        let _ = stellar_account::set_data(&env, &env.current_contract_address(), &key_hash, &hash_b64);
+        env.storage().persistent().set(&key_cid, &cid_b64);
+        env.storage().persistent().set(&key_hash, &hash_b64);
 
         Ok(call)
     }
@@ -351,8 +339,7 @@ impl CallRegistry {
     /// View: retrieve a DataEntry from the contract's Stellar account for a call.
     /// Returns `None` when no entry exists for the key.
     pub fn get_call_data_entry(env: Env, call_id: u64, key: Bytes) -> Option<Bytes> {
-        // Use host function to read Stellar account data; returns Option<Bytes>
-        stellar_account::get_data(&env, &env.current_contract_address(), &key)
+        env.storage().persistent().get(&key)
     }
 
     pub fn update_call_metadata(
