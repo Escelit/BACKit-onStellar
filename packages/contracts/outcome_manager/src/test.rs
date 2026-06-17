@@ -70,7 +70,7 @@ fn setup_single_oracle(
     Address,
     BytesN<32>,
     BytesN<32>,
-        OutcomeManagerClient<'_>,
+        OutcomeManagerClient<'_>, 
 ) {
     env.mock_all_auths();
     let admin = Address::generate(env);
