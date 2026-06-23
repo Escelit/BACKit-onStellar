@@ -428,8 +428,8 @@ impl OutcomeManager {
         // for compatibility (Soroban host claimable balance API varies by network).
         let mut id_input = Bytes::from_slice(&env, b"claimbal:");
         id_input.append(&Bytes::from_slice(&env, &call_id.to_be_bytes()));
-        let staker_bytes = staker.to_string().len(); // use as entropy input
-        id_input.append(&Bytes::from_slice(&env, &(staker_bytes as u64).to_be_bytes()));
+        // Use staker address XDR bytes to guarantee per-staker uniqueness
+        id_input.append(&staker.clone().to_xdr(&env));
         let balance_id: BytesN<32> = env.crypto().sha256(&id_input).into();
 
         env.storage()
